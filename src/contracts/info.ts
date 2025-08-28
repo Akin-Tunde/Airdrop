@@ -1,7 +1,7 @@
 // src/contracts/info.ts
 
 // TODO: Replace with your deployed contract address
-export const raindropContractAddress = '0x...YourRaindropContractAddress';
+export const raindropContractAddress = '0xc2C674EA471aC90b0e38e0B142f72f6b3a6223c3';
 
 // TODO: Replace with your contract's ABI
 // You can get this from your compiled contract artifacts (e.g., in a JSON file)
