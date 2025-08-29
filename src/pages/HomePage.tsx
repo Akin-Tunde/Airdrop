@@ -1,123 +1,138 @@
-// src/pages/HomePage.tsx
+// src/pages/HomePage.tsx (Final, Type-Inferred Version)
 
 import { useState, useEffect } from 'react';
-import { useAccount } from 'wagmi';
-import { createPublicClient, http, formatUnits } from 'viem';
-import { base } from 'viem/chains';
+import { useAccount, usePublicClient } from 'wagmi';
+import { formatUnits } from 'viem';
 import { Link } from 'react-router-dom';
 
-import { raindropContractAddress, raindropContractABI } from '../contracts/info';
-import './HomePage.css'; // For styling our table
+import { raindropContractAddress } from '../contracts/info'; 
+import './HomePage.css';
 
-// Define a type for our raindrop data for TypeScript
-type Raindrop = {
-  raindropId: string;
-    token: `0x${string}`;
-      totalAmount: bigint;
-      };
+// Define the event ABI once as a constant for type safety and reusability.
+const raindropCreatedEvent = {
+  type: 'event',
+  name: 'RaindropCreated',
+  inputs: [
+    { type: 'string', name: 'raindropId', indexed: true },
+    { type: 'address', name: 'host', indexed: true },
+    { type: 'address', name: 'token', indexed: true },
+    { type: 'uint256', name: 'totalAmount' },
+    { type: 'uint256', name: 'scheduledTime' },
+  ],
+} as const; // The 'as const' is crucial for strict type inference
 
-      // Create a public client to read from the blockchain
-      const publicClient = createPublicClient({
-        chain: base,
-          transport: http(),
+export function HomePage() {
+  const { address, isConnected } = useAccount();
+  const publicClient = usePublicClient();
+
+  // Let's create a more specific type for our raindrops based on the ABI
+  type RaindropLog = {
+    args: {
+      raindropId?: string;
+      token?: `0x${string}`;
+      totalAmount?: bigint;
+    }
+  };
+
+  const [raindrops, setRaindrops] = useState<RaindropLog['args'][]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const fetchRaindrops = async () => {
+      if (!publicClient || !address) return;
+
+      setIsLoading(true);
+      setError('');
+      setRaindrops([]);
+
+      try {
+        const contractDeploymentBlock = 16139986n;
+        const latestBlock = await publicClient.getBlockNumber();
+        const chunkSize = 499n;
+
+        // FIX: Initialize 'allLogs' without an explicit type.
+        // TypeScript will infer its type on the first `push`.
+        let allLogs = [];
+
+        for (let fromBlock = contractDeploymentBlock; fromBlock <= latestBlock; fromBlock += chunkSize) {
+          const toBlock = fromBlock + chunkSize - 1n < latestBlock ? fromBlock + chunkSize - 1n : latestBlock;
+          
+          console.log(`Fetching logs from block ${fromBlock} to ${toBlock}`);
+
+          const logs = await publicClient.getLogs({
+            address: raindropContractAddress,
+            event: raindropCreatedEvent, // Use the constant ABI
+            args: {
+              host: address,
+            },
+            fromBlock: fromBlock,
+            toBlock: toBlock,
           });
+          
+          // When we push the 'logs' array, 'allLogs' becomes an array of the correct, specific log type.
+          allLogs.push(...logs);
+        }
 
-          export function HomePage() {
-            const { address, isConnected } = useAccount();
-              const [raindrops, setRaindrops] = useState<Raindrop[]>([]);
-                const [isLoading, setIsLoading] = useState(false);
-                  const [error, setError] = useState('');
+        // Now, 'log.args' exists because TypeScript correctly inferred the type.
+        const userRaindrops = allLogs.map((log) => log.args);
+        setRaindrops(userRaindrops);
 
-                    useEffect(() => {
-                        const fetchRaindrops = async () => {
-                              if (!address) return; // Don't fetch if no user is connected
+      } catch (e) {
+        console.error("Error fetching raindrops:", e);
+        setError("Failed to fetch raindrops. Please try again.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-                                    setIsLoading(true);
-                                          setError('');
-                                                setRaindrops([]);
+    fetchRaindrops();
+  }, [address, publicClient]);
 
-                                                      try {
-                                                              // Fetch the logs for the RaindropCreated event, filtered by the host address
-                                                                      const logs = await publicClient.getLogs({
-                                                                                address: raindropContractAddress,
-                                                                                          event: {
-                                                                                                      type: 'event',
-                                                                                                                  name: 'RaindropCreated',
-                                                                                                                              inputs: [
-                                                                                                                                            { type: 'string', name: 'raindropId', indexed: true },
-                                                                                                                                                          { type: 'address', name: 'host', indexed: true },
-                                                                                                                                                                        { type: 'address', name: 'token', indexed: true },
-                                                                                                                                                                                      { type: 'uint256', name: 'totalAmount' },
-                                                                                                                                                                                                    { type: 'uint256', name: 'scheduledTime' },
-                                                                                                                                                                                                                ],
-                                                                                                                                                                                                                          },
-                                                                                                                                                                                                                                    args: {
-                                                                                                                                                                                                                                                host: address, // This is the crucial filter
-                                                                                                                                                                                                                                                          },
-                                                                                                                                                                                                                                                                    fromBlock: 1n, // Search from the beginning of the chain. For production, use a more recent block.
-                                                                                                                                                                                                                                                                              toBlock: 'latest',
-                                                                                                                                                                                                                                                                                      });
+  if (!isConnected) {
+    return <p>Please connect your wallet to see your dashboard.</p>;
+  }
 
-                                                                                                                                                                                                                                                                                              // Map the logs to a more usable format
-                                                                                                                                                                                                                                                                                                      const userRaindrops = logs.map((log) => log.args as Raindrop);
-                                                                                                                                                                                                                                                                                                              setRaindrops(userRaindrops);
+  if (isLoading) {
+    return <p>Loading your raindrops... This may take a moment.</p>;
+  }
 
-                                                                                                                                                                                                                                                                                                                    } catch (e) {
-                                                                                                                                                                                                                                                                                                                            console.error("Error fetching raindrops:", e);
-                                                                                                                                                                                                                                                                                                                                    setError("Failed to fetch raindrops. Please try again.");
-                                                                                                                                                                                                                                                                                                                                          } finally {
-                                                                                                                                                                                                                                                                                                                                                  setIsLoading(false);
-                                                                                                                                                                                                                                                                                                                                                        }
-                                                                                                                                                                                                                                                                                                                                                            };
+  if (error) {
+    return <p style={{ color: 'red' }}>{error}</p>;
+  }
 
-                                                                                                                                                                                                                                                                                                                                                                fetchRaindrops();
-                                                                                                                                                                                                                                                                                                                                                                  }, [address]); // Re-run this effect when the connected account changes
-
-                                                                                                                                                                                                                                                                                                                                                                    if (!isConnected) {
-                                                                                                                                                                                                                                                                                                                                                                        return <p>Please connect your wallet to see your dashboard.</p>;
-                                                                                                                                                                                                                                                                                                                                                                          }
-
-                                                                                                                                                                                                                                                                                                                                                                            if (isLoading) {
-                                                                                                                                                                                                                                                                                                                                                                                return <p>Loading your raindrops...</p>;
-                                                                                                                                                                                                                                                                                                                                                                                  }
-
-                                                                                                                                                                                                                                                                                                                                                                                    if (error) {
-                                                                                                                                                                                                                                                                                                                                                                                        return <p style={{ color: 'red' }}>{error}</p>;
-                                                                                                                                                                                                                                                                                                                                                                                          }
-
-                                                                                                                                                                                                                                                                                                                                                                                            return (
-                                                                                                                                                                                                                                                                                                                                                                                                <div>
-                                                                                                                                                                                                                                                                                                                                                                                                      <div className="dashboardHeader">
-                                                                                                                                                                                                                                                                                                                                                                                                              <h2>My Raindrops Dashboard</h2>
-                                                                                                                                                                                                                                                                                                                                                                                                                      <Link to="/create" className="createButton">Create New Raindrop</Link>
-                                                                                                                                                                                                                                                                                                                                                                                                                            </div>
-                                                                                                                                                                                                                                                                                                                                                                                                                                  {raindrops.length === 0 ? (
-                                                                                                                                                                                                                                                                                                                                                                                                                                          <p>You haven't created any raindrops yet.</p>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                ) : (
-                                                                                                                                                                                                                                                                                                                                                                                                                                                        <table className="raindropsTable">
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                  <thead>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                              <tr>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            <th>Raindrop ID</th>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          <th>Token Address</th>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        <th>Total Amount</th>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    </tr>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              </thead>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        <tbody>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    {raindrops.map((raindrop) => (
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  <tr key={raindrop.raindropId}>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  <td>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    <Link to={`/raindrop/${raindrop.raindropId}`}>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        {raindrop.raindropId}
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          </Link>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          </td>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          <td>{raindrop.token}</td>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          {/* formatUnits converts the large number back to a readable format */}
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          <td>{formatUnits(raindrop.totalAmount, 18)}</td>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        </tr>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    ))}
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              </tbody>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      </table>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            )}
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                </div>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  );
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  }
+  return (
+    <div>
+      <div className="dashboardHeader">
+        <h2>My Raindrops Dashboard</h2>
+        <Link to="/create" className="createButton">Create New Raindrop</Link>
+      </div>
+      {raindrops.length === 0 ? (
+        <p>You haven't created any raindrops yet.</p>
+      ) : (
+        <table className="raindropsTable">
+          <thead>
+            <tr>
+              <th>Raindrop ID</th>
+              <th>Token Address</th>
+              <th>Total Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {raindrops.map((raindrop, index) => (
+              <tr key={`${raindrop.raindropId}-${index}`}>
+                <td>
+                  <Link to={`/raindrop/${raindrop.raindropId}`}>
+                    {raindrop.raindropId}
+                  </Link>
+                </td>
+                <td>{raindrop.token}</td>
+                <td>{raindrop.totalAmount ? formatUnits(raindrop.totalAmount, 18) : 'N/A'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}

@@ -1,142 +1,167 @@
 // src/pages/DetailsPage.tsx
 
-import { useParams, useNavigate } from 'react-router-dom';
-import { useAccount, useContractRead, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
-import { formatUnits } from 'viem';
+import { useParams } from 'react-router-dom';
+import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { formatUnits, isAddress, BaseError } from 'viem';
 import React, { useState, useEffect } from 'react';
 
-import { raindropContractAddress, raindropContractABI } from '../contracts/info';
+import { raindropContractAddress, raindropContractABI, erc20ABI } from '../contracts/info';
 import './DetailsPage.css';
 
+// --- Re-usable Error Handling Utility ---
+function getErrorMessage(error: unknown): string {
+    if (!error) return "An unknown error occurred.";
+    if (error instanceof BaseError) {
+        const rootCause = error.walk();
+        if ('shortMessage' in rootCause && typeof rootCause.shortMessage === 'string') {
+            return rootCause.shortMessage;
+        }
+        return rootCause.message;
+    }
+    if (error instanceof Error) {
+        return error.message;
+    }
+    return String(error);
+}
+
 export function DetailsPage() {
-  const { id: raindropId } = useParams(); // Get raindropId from URL
-    const navigate = useNavigate();
-      const { address } = useAccount();
+    const { id: raindropId } = useParams();
+    const { address } = useAccount();
 
-        // State for participant management
-          const [participantsToAdd, setParticipantsToAdd] = useState('');
+    const [participantsToAdd, setParticipantsToAdd] = useState('');
 
-            // Wagmi hook to read raindrop details
-              const { data: details, isLoading: isLoadingDetails, refetch: refetchDetails } = useContractRead({
-                  address: raindropContractAddress,
-                      abi: raindropContractABI,
-                          functionName: 'getRaindropDetails',
-                              args: [raindropId!],
-                                  enabled: !!raindropId, // Only run query if raindropId is available
-                                    });
-                                      
-                                        // Wagmi hook for writing to the contract (execute, cancel, add participants)
-                                          const { data: hash, writeContract, isPending, error } = useWriteContract();
-                                            const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash });
+    const { data: details, isLoading: isLoadingDetails, refetch: refetchDetails } = useReadContract({
+        address: raindropContractAddress,
+        abi: raindropContractABI,
+        functionName: 'getRaindropDetails',
+        args: [raindropId!],
+        query: {
+            enabled: !!raindropId,
+        }
+    });
 
-                                              // Effect to refetch data and show alerts after a transaction is confirmed
-                                                useEffect(() => {
-                                                    if (isConfirmed) {
-                                                          alert("Transaction successful!");
-                                                                refetchDetails(); // Refetch the details to get the latest status
-                                                                    }
-                                                                      }, [isConfirmed]);
+    const tokenAddress = details?.[1];
 
-                                                                        const handleExecute = () => {
-                                                                            writeContract({
-                                                                                  address: raindropContractAddress,
-                                                                                        abi: raindropContractABI,
-                                                                                              functionName: 'executeRaindrop',
-                                                                                                    args: [raindropId!],
-                                                                                                        });
-                                                                                                          };
+    const { data: tokenDecimals, isLoading: isLoadingDecimals } = useReadContract({
+        address: tokenAddress,
+        abi: erc20ABI,
+        functionName: 'decimals',
+        query: {
+            enabled: !!tokenAddress,
+        }
+    });
 
-                                                                                                            const handleCancel = () => {
-                                                                                                                writeContract({
-                                                                                                                      address: raindropContractAddress,
-                                                                                                                            abi: raindropContractABI,
-                                                                                                                                  functionName: 'cancelRaindrop',
-                                                                                                                                        args: [raindropId!],
-                                                                                                                                            });
-                                                                                                                                              };
+    const { data: hash, writeContract, isPending, error } = useWriteContract();
+    const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash });
 
-                                                                                                                                                const handleAddParticipants = () => {
-                                                                                                                                                    // Parse the text area content into an array of addresses
-                                                                                                                                                        const addresses = participantsToAdd.split(/[\s,]+/).filter(addr => addr.startsWith('0x'));
-                                                                                                                                                            if (addresses.length === 0) {
-                                                                                                                                                                  alert("Please enter valid addresses.");
-                                                                                                                                                                        return;
-                                                                                                                                                                            }
-                                                                                                                                                                                writeContract({
-                                                                                                                                                                                      address: raindropContractAddress,
-                                                                                                                                                                                            abi: raindropContractABI,
-                                                                                                                                                                                                  functionName: 'addParticipants',
-                                                                                                                                                                                                        args: [raindropId!, addresses],
-                                                                                                                                                                                                            });
-                                                                                                                                                                                                              };
-                                                                                                                                                                                                                
-                                                                                                                                                                                                                  if (isLoadingDetails) return <p>Loading details...</p>;
-                                                                                                                                                                                                                    if (!details) return <p>Could not find details for raindrop: {raindropId}</p>;
+    useEffect(() => {
+        if (isConfirmed) {
+            alert("Transaction successful!");
+            refetchDetails();
+        }
+    }, [isConfirmed, refetchDetails]);
 
-                                                                                                                                                                                                                      const [host, token, totalAmount, scheduledTime, executed, cancelled, participantCount] = details;
-                                                                                                                                                                                                                        const isHost = address === host;
-                                                                                                                                                                                                                          const executionDate = new Date(Number(scheduledTime) * 1000);
-                                                                                                                                                                                                                            const canExecute = !executed && !cancelled && new Date() > executionDate;
+    const handleExecute = () => {
+        writeContract({
+            address: raindropContractAddress,
+            abi: raindropContractABI,
+            functionName: 'executeRaindrop',
+            args: [raindropId!],
+        });
+    };
 
-                                                                                                                                                                                                                              const isLoading = isPending || isConfirming;
+    const handleCancel = () => {
+        writeContract({
+            address: raindropContractAddress,
+            abi: raindropContractABI,
+            functionName: 'cancelRaindrop',
+            args: [raindropId!],
+        });
+    };
 
-                                                                                                                                                                                                                                return (
-                                                                                                                                                                                                                                    <div className="detailsContainer">
-                                                                                                                                                                                                                                          <h2>Raindrop: {raindropId}</h2>
-                                                                                                                                                                                                                                                
-                                                                                                                                                                                                                                                      <div className="detailsGrid">
-                                                                                                                                                                                                                                                              <div><strong>Status:</strong></div>
-                                                                                                                                                                                                                                                                      <div>
-                                                                                                                                                                                                                                                                                {executed ? <span className="status executed">Executed</span> :
-                                                                                                                                                                                                                                                                                           cancelled ? <span className="status cancelled">Cancelled</span> :
-                                                                                                                                                                                                                                                                                                      <span className="status scheduled">Scheduled</span>}
-                                                                                                                                                                                                                                                                                                              </div>
+    const handleAddParticipants = () => {
+        const addresses = participantsToAdd
+            .split(/[\s,]+/)
+            .filter(addr => isAddress(addr));
 
-                                                                                                                                                                                                                                                                                                                      <div><strong>Host:</strong></div>
-                                                                                                                                                                                                                                                                                                                              <div>{host}</div>
+        if (addresses.length === 0) {
+            alert("Please enter at least one valid Ethereum address.");
+            return;
+        }
 
-                                                                                                                                                                                                                                                                                                                                      <div><strong>Token:</strong></div>
-                                                                                                                                                                                                                                                                                                                                              <div>{token}</div>
+        writeContract({
+            address: raindropContractAddress,
+            abi: raindropContractABI,
+            functionName: 'addParticipants',
+            args: [raindropId!, addresses],
+        });
+    };
 
-                                                                                                                                                                                                                                                                                                                                                      <div><strong>Total Amount:</strong></div>
-                                                                                                                                                                                                                                                                                                                                                              <div>{formatUnits(totalAmount, 18)}</div>
+    if (isLoadingDetails) return <p>Loading details...</p>;
+    if (!details) return <p>Could not find details for raindrop: {raindropId}</p>;
 
-                                                                                                                                                                                                                                                                                                                                                                      <div><strong>Scheduled Time:</strong></div>
-                                                                                                                                                                                                                                                                                                                                                                              <div>{executionDate.toLocaleString()}</div>
-                                                                                                                                                                                                                                                                                                                                                                                      
-                                                                                                                                                                                                                                                                                                                                                                                              <div><strong>Participants:</strong></div>
-                                                                                                                                                                                                                                                                                                                                                                                                      <div>{participantCount.toString()}</div>
-                                                                                                                                                                                                                                                                                                                                                                                                            </div>
+    const [host, token, totalAmount, scheduledTime, executed, cancelled, participantCount] = details;
+    const isHost = address === host;
+    const executionDate = new Date(Number(scheduledTime) * 1000);
+    const canExecute = !executed && !cancelled && new Date() > executionDate;
 
-                                                                                                                                                                                                                                                                                                                                                                                                                  {isHost && !executed && !cancelled && (
-                                                                                                                                                                                                                                                                                                                                                                                                                          <div className="managementSection">
-                                                                                                                                                                                                                                                                                                                                                                                                                                    <h3>Manage Raindrop</h3>
-                                                                                                                                                                                                                                                                                                                                                                                                                                              <div className="actionButtons">
-                                                                                                                                                                                                                                                                                                                                                                                                                                                          <button onClick={handleExecute} disabled={!canExecute || isLoading}>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                        {isLoading ? 'Processing...' : 'Execute Raindrop'}
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    </button>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                <button onClick={handleCancel} disabled={isLoading} className="cancelButton">
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              {isLoading ? 'Processing...' : 'Cancel Raindrop'}
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          </button>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    </div>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              {!canExecute && <small>You can execute this raindrop after the scheduled time has passed.</small>}
+    const isLoading = isPending || isConfirming;
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        <div className="addParticipants">
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    <h4>Add Participants</h4>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                <textarea
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              rows={5}
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            placeholder="Paste addresses here, separated by spaces or commas."
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          value={participantsToAdd}
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        onChange={(e) => setParticipantsToAdd(e.target.value)}
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    />
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                <button onClick={handleAddParticipants} disabled={isLoading}>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              {isLoading ? 'Processing...' : 'Add Participants'}
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          </button>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    </div>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            </div>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  )}
+    return (
+        <div className="detailsContainer">
+            <h2>Raindrop: {raindropId}</h2>
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        {error && <p className="error">Error: {error.shortMessage}</p>}
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            </div>
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              );
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              }
+            <div className="detailsGrid">
+                <div><strong>Status:</strong></div>
+                <div>
+                    {executed ? <span className="status executed">Executed</span> :
+                     cancelled ? <span className="status cancelled">Cancelled</span> :
+                     <span className="status scheduled">Scheduled</span>}
+                </div>
+                <div><strong>Host:</strong></div>
+                <div>{host}</div>
+                <div><strong>Token:</strong></div>
+                <div>{token}</div>
+                <div><strong>Total Amount:</strong></div>
+                <div>
+                    {isLoadingDecimals ? 'Loading...' : (
+                        tokenDecimals !== undefined ? formatUnits(totalAmount, tokenDecimals) : 'N/A'
+                    )}
+                </div>
+                <div><strong>Scheduled Time:</strong></div>
+                <div>{executionDate.toLocaleString()}</div>
+                <div><strong>Participants:</strong></div>
+                <div>{participantCount.toString()}</div>
+            </div>
+
+            {isHost && !executed && !cancelled && (
+                <div className="managementSection">
+                    <h3>Manage Raindrop</h3>
+                    <div className="actionButtons">
+                        <button onClick={handleExecute} disabled={!canExecute || isLoading}>
+                            {isLoading ? 'Processing...' : 'Execute Raindrop'}
+                        </button>
+                        <button onClick={handleCancel} disabled={isLoading} className="cancelButton">
+                            {isLoading ? 'Processing...' : 'Cancel Raindrop'}
+                        </button>
+                    </div>
+                    {!canExecute && <small>You can execute this raindrop after the scheduled time has passed.</small>}
+                    <div className="addParticipants">
+                        <h4>Add Participants</h4>
+                        <textarea
+                            rows={5}
+                            placeholder="Paste addresses here, separated by spaces or commas."
+                            value={participantsToAdd}
+                            onChange={(e) => setParticipantsToAdd(e.target.value)}
+                        />
+                        <button onClick={handleAddParticipants} disabled={isLoading}>
+                            {isLoading ? 'Processing...' : 'Add Participants'}
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {error && <p className="error">Error: {getErrorMessage(error)}</p>}
+        </div>
+    );
+}

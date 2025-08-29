@@ -8,36 +8,40 @@ import './index.css';
 import { BrowserRouter } from 'react-router-dom';
 import '@rainbow-me/rainbowkit/styles.css';
 import { getDefaultConfig, RainbowKitProvider } from '@rainbow-me/rainbowkit';
-import { WagmiProvider } from 'wagmi';
-// CHANGE 1: Import the Base mainnet
+import { WagmiProvider, http } from 'wagmi';
 import { base } from 'wagmi/chains';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const projectId = import.meta.env.VITE_RAINBOWKIT_PROJECT_ID;
 if (!projectId) {
-  throw new Error("VITE_RAINBOWKIT_PROJECT_ID is not set. Please add it to your .env.local file");
-  }
+  throw new Error("VITE_RAINBOWKIT_PROJECT_ID is not set. Please add it to your .env file");
+}
+const alchemyApiKey = import.meta.env.ALCHEMYAPIKEY;
+const config = getDefaultConfig({
+  appName: 'Raindrop dApp',
+  projectId: projectId,
+  chains: [base],
 
-  const config = getDefaultConfig({
-    appName: 'Raindrop dApp',
-      projectId: projectId,
-        // CHANGE 2: Set the chain to Base mainnet
-          chains: [base],
-            ssr: false, // This should be false for Vite (client-side) apps
-            });
+  // --- This 'transports' object is the fix for the 503 errors ---
+  transports: {
+    [base.id]: http(`https://base-mainnet.g.alchemy.com/v2/${alchemyApiKey}`),
+  },
 
-            const queryClient = new QueryClient();
+  ssr: false, // Required for Vite client-side apps
+});
 
-            ReactDOM.createRoot(document.getElementById('root')!).render(
-              <React.StrictMode>
-                  <WagmiProvider config={config}>
-                        <QueryClientProvider client={queryClient}>
-                                <RainbowKitProvider>
-                                          <BrowserRouter>
-                                                      <App />
-                                                                </BrowserRouter>
-                                                                        </RainbowKitProvider>
-                                                                              </QueryClientProvider>
-                                                                                  </WagmiProvider>
-                                                                                    </React.StrictMode>,
-                                                                                    );
+const queryClient = new QueryClient();
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <WagmiProvider config={config}>
+      <QueryClientProvider client={queryClient}>
+        <RainbowKitProvider>
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
+        </RainbowKitProvider>
+      </QueryClientProvider>
+    </WagmiProvider>
+  </React.StrictMode>,
+);

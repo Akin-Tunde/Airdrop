@@ -5,7 +5,7 @@ export const raindropContractAddress = '0xc2C674EA471aC90b0e38e0B142f72f6b3a6223
 
 // TODO: Replace with your contract's ABI
 // You can get this from your compiled contract artifacts (e.g., in a JSON file)
-export const raindropContractABI =[
+export const raindropContractABI = [
 	{
 		"inputs": [
 			{
