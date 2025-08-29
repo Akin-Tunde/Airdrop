@@ -3,7 +3,8 @@
 import { useParams } from 'react-router-dom';
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { formatUnits, isAddress, BaseError } from 'viem';
-import React, { useState, useEffect } from 'react';
+// The corrected line
+import { useState, useEffect } from 'react';
 
 import { raindropContractAddress, raindropContractABI, erc20ABI } from '../contracts/info';
 import './DetailsPage.css';
